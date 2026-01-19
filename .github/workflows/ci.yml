@@ -4,8 +4,7 @@ on:
   push:
     branches-ignore:
       - 'main'
-    paths:
-      - 'src/frontend/**'
+    
   workflow_dispatch:
 
 env:
