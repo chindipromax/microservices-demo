@@ -16,7 +16,7 @@ env:
 jobs:
   # 1. PREPARE: Create the unique version tag
   prepare:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.tag.outputs.TAG }}
     steps:
@@ -31,7 +31,7 @@ jobs:
   # 2. STATIC ANALYSIS: Check code for secrets and vulnerabilities
   static_security:
     needs: prepare
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       
@@ -47,7 +47,7 @@ jobs:
   # 3. BUILD: Create the Docker Image locally
   build:
     needs: [prepare, static_security]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -60,7 +60,7 @@ jobs:
   # 4. PUSH: Upload to Docker Hub
   push:
     needs: [prepare, build]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Docker Login
         # Fixed: Using consistent secret name (ensure this matches your GitHub Settings)
@@ -80,7 +80,7 @@ jobs:
   # 5. SCAN: Vulnerability check on the pushed image
   vulnerability_scan:
     needs: [prepare, push]
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - name: Trivy Scan
         uses: aquasec/trivy-action@master
