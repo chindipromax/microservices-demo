@@ -1,0 +1,90 @@
+name: Frontend-CI-Push-Pipeline
+
+on:
+  push:
+    branches-ignore:
+      - 'main'
+    paths:
+      - 'src/frontend/**'
+
+env:
+  REGISTRY: "docker.io" # Standard API endpoint for Docker Hub
+  IMAGE_NAME: "pranavshejul15/devsecops"
+  REGISTRY_USER: "pranavshejul15"
+
+jobs:
+  # 1. PREPARE: Create the unique version tag
+  prepare:
+    runs-on: self-hosted
+    outputs:
+      image_tag: ${{ steps.tag.outputs.TAG }}
+    steps:
+      - name: Generate Tag
+        id: tag
+        run: |
+          BUILD_DATE=$(date +%Y%m%d)
+          IMAGE_TAG="v1.0-${BUILD_DATE}-${{ github.run_id }}"
+          echo "TAG=$IMAGE_TAG" >> $GITHUB_OUTPUT
+          echo "🚀 Created Tag: $IMAGE_TAG"
+
+  # 2. STATIC ANALYSIS: Check code for secrets and vulnerabilities
+  static_security:
+    needs: prepare
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Gitleaks Scan
+        uses: gitleaks/gitleaks-action@v2
+        continue-on-error: true
+
+      - name: Retire.js Scan
+        run: |
+          mkdir -p security_reports
+          npx --yes retire@latest --path src/frontend --outputformat json --outputpath security_reports/retire-report.json || true
+
+  # 3. BUILD: Create the Docker Image locally
+  build:
+    needs: [prepare, static_security]
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker Image
+        run: |
+          FULL_IMAGE_PATH="${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image_tag }}"
+          echo "🛠️ Building $FULL_IMAGE_PATH"
+          docker build -t $FULL_IMAGE_PATH src/frontend
+
+  # 4. PUSH: Upload to Docker Hub
+  push:
+    needs: [prepare, build]
+    runs-on: self-hosted
+    steps:
+      - name: Docker Login
+        # Fixed: Using consistent secret name (ensure this matches your GitHub Settings)
+        run: |
+          echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ env.REGISTRY_USER }}" --password-stdin
+
+      - name: Push to Registry
+        run: |
+          FULL_IMAGE_PATH="${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image_tag }}"
+          echo "📤 Pushing $FULL_IMAGE_PATH"
+          docker push $FULL_IMAGE_PATH
+
+      - name: Docker Logout
+        if: always()
+        run: docker logout
+
+  # 5. SCAN: Vulnerability check on the pushed image
+  vulnerability_scan:
+    needs: [prepare, push]
+    runs-on: self-hosted
+    steps:
+      - name: Trivy Scan
+        uses: aquasec/trivy-action@master
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:${{ needs.prepare.outputs.image_tag }}"
+          format: 'table'
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'
